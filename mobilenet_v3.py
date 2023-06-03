@@ -9,6 +9,7 @@ from __future__ import division
 from __future__ import print_function
 
 import tensorflow as tf
+import time 
 
 __all__ = ['mobilenet_v3_large', 'mobilenet_v3_small']
 
@@ -122,36 +123,60 @@ def mobilenet_v3_block(input, k_s, expansion_ratio, output_dim, stride, name, is
 
     with tf.variable_scope(name, reuse=reuse):
         # pw mobilenetV2
+        start = time.time()
         net = _conv_1x1_bn(input, bottleneck_dim, name="pw", use_bias=use_bias)
+        end = time.time()
+        print("Elapsed time by layer 2 : %d", end-start )
 
+        start = time.time()
         if activatation == "HS":
             net = hard_swish(net)
         elif activatation == "RE":
             net = relu6(net)
         else:
             raise NotImplementedError
+        end = time.time()
+        print("Elapsed time by layer 3 : %d", end-start )
+        
 
+        start = time.time()
         # dw
         net = _dwise_conv(net, k_w=k_s, k_h=k_s, strides=[stride, stride], name='dw',
                           use_bias=use_bias, reuse=reuse)
+        end = time.time()
+        print("Elapsed time by layer 4 : %d", end-start )
 
+        start = time.time()
         net = _batch_normalization_layer(net, momentum=0.997, epsilon=1e-3,
                                          is_training=is_training, name='dw_bn', reuse=reuse)
+        end = time.time()
+        print("Elapsed time by layer 5 : %d", end-start )
 
+
+        start = time.time()
         if activatation == "HS":
             net = hard_swish(net)
         elif activatation == "RE":
             net = relu6(net)
         else:
             raise NotImplementedError
+        end = time.time()
+        print("Elapsed time by layer 6 : %d", end-start )
+        
 
+        start = time.time()
         # squeeze and excitation
         if se:
             channel = net.get_shape().as_list()[-1]
             net = _squeeze_excitation_layer(net, out_dim=channel, ratio=ratio, layer_name='se_block')
+        end = time.time()
+        print("Elapsed time by layer 7 : %d", end-start )
 
+        start = time.time()
         # pw & linear
         net = _conv_1x1_bn(net, output_dim, name="pw_linear", use_bias=use_bias)
+        end = time.time()
+        print("Elapsed time by layer 8 : %d", end-start )
 
         # element wise add, only for stride==1
         if shortcut and stride == 1:
@@ -253,11 +278,15 @@ def mobilenet_v3_large(inputs, classes_num, multiplier=1.0, is_training=True, re
     reduction_ratio = 4
     with tf.variable_scope('init', reuse=reuse):
         init_conv_out = _make_divisible(16 * multiplier)
+        start = time.time()
         x = _conv_bn_relu(inputs, filters_num=init_conv_out, kernel_size=3, name='init',
                           use_bias=False, strides=2, is_training=is_training, activation=hard_swish)
+        end = time.time()
+        print("Elapsed time by layer 1 : %d", end-start )
 
     with tf.variable_scope("MobilenetV3_large", reuse=reuse):
         for idx, (in_channels, out_channels, kernel_size, stride, activatation, se, exp_size) in enumerate(layers):
+            print("Loop %d", idx)
             in_channels = _make_divisible(in_channels * multiplier)
             out_channels = _make_divisible(out_channels * multiplier)
             exp_size = _make_divisible(exp_size * multiplier)
@@ -269,19 +298,32 @@ def mobilenet_v3_large(inputs, classes_num, multiplier=1.0, is_training=True, re
 
         conv1_in = _make_divisible(160 * multiplier)
         conv1_out = _make_divisible(960 * multiplier)
+
+        start = time.time() 
         x = _conv_bn_relu(x, filters_num=conv1_out, kernel_size=1, name="conv1_out",
                           use_bias=True, strides=1, is_training=is_training, activation=hard_swish)
+        end = time.time()
+        print("Elapsed time by layer 9 : %d", end-start )
         end_points["conv1_out_1x1"] = x
 
+
+        start = time.time()
         x = _global_avg(x, pool_size=x.get_shape()[1:-1], strides=1)
+        end = time.time()
+        print("Elapsed time by layer 10 : %d", end-start )
+
         #x = hard_swish(x)
         end_points["global_pool"] = x
 
     with tf.variable_scope('Logits_out', reuse=reuse):
         conv2_in = _make_divisible(960 * multiplier)
         conv2_out = _make_divisible(1280 * multiplier)
+
+        start = time.time()
         x = _conv2d_layer(x, filters_num=conv2_out, kernel_size=1, name="conv2", use_bias=True, strides=1)
         x = hard_swish(x)
+        end = time.time()
+        print("Elapsed time by layer 11 : %d", end-start )
         end_points["conv2_out_1x1"] = x
 
         x = _conv2d_layer(x, filters_num=classes_num, kernel_size=1, name="conv3", use_bias=True, strides=1)
